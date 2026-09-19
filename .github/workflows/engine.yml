@@ -45,6 +45,10 @@ jobs:
       - run: swift --version
       - run: ls Sources && ls Sources/CopyShelteriOSCore Sources/CopyShelterTransfer && git log --oneline -1
       - run: swift build --product csctl
+      - run: swift build --build-tests
+      # Temporary diagnostic for F-889/F-890: where does the resource
+      # bundle actually land, and does it hold the file DriveReadMe wants?
+      - run: find .build -iname "*.bundle" -o -iname "RepositoryFormat.md" | sort
       - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
       - run: .build/debug/csctl --help || true
 
