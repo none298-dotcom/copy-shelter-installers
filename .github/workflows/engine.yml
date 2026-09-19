@@ -26,6 +26,14 @@ on:
 jobs:
   ubuntu:
     runs-on: ubuntu-24.04
+    # `/tmp` on this runner is tmpfs and refuses extended attributes
+    # (`setxattr` answers ENOTSUP), which several test fixtures need for a
+    # real xattr round trip. `$GITHUB_WORKSPACE` is the checkout's own
+    # ext4, which supports them, so tests that call `NSTemporaryDirectory()`
+    # get a real filesystem instead by way of `TMPDIR`, the environment
+    # variable Foundation's temporary-directory lookup already checks first.
+    env:
+      TMPDIR: ${{ github.workspace }}/.tmp-tests
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,6 +50,7 @@ jobs:
           curl -fsSL "https://download.swift.org/swift-${V}-release/ubuntu2404/swift-${V}-RELEASE/swift-${V}-RELEASE-ubuntu24.04.tar.gz" -o swift.tar.gz
           sudo tar -xzf swift.tar.gz --directory / --strip-components=1
           rm swift.tar.gz
+      - run: mkdir -p "$TMPDIR"
       - run: swift --version
       - run: ls Sources && ls Sources/CopyShelteriOSCore Sources/CopyShelterTransfer && git log --oneline -1
       - run: swift build --product csctl
@@ -51,6 +60,10 @@ jobs:
   fedora:
     runs-on: ubuntu-24.04
     container: fedora:41
+    # See the ubuntu job's comment: the same tmpfs-`/tmp`-has-no-xattr-support
+    # gap applies inside this container too.
+    env:
+      TMPDIR: ${{ github.workspace }}/.tmp-tests
     steps:
       - name: Swift toolchain and build prerequisites
         run: |
@@ -66,6 +79,7 @@ jobs:
           repository: none298-dotcom/copy-shelter
           ref: ${{ inputs.ref }}
           ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - run: mkdir -p "$TMPDIR"
       - run: swift --version
       - run: swift build --product csctl
       - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
