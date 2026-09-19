@@ -26,19 +26,7 @@ on:
 jobs:
   ubuntu:
     runs-on: ubuntu-24.04
-    # `/tmp` on this runner is tmpfs and refuses extended attributes
-    # (`setxattr` answers ENOTSUP), which several test fixtures need for a
-    # real xattr round trip. `$GITHUB_WORKSPACE` is the checkout's own
-    # ext4, which supports them, so tests that call `NSTemporaryDirectory()`
-    # get a real filesystem instead by way of `TMPDIR`, the environment
-    # variable Foundation's temporary-directory lookup already checks first.
-    env:
-      TMPDIR: ${{ github.workspace }}/.tmp-tests
     steps:
-      # First, before anything (apt, dnf and the like use TMPDIR for their
-      # own scratch files) reads a $TMPDIR that does not exist yet:
-      # mkstemp failures killed dnf the first time this ran on Fedora.
-      - run: mkdir -p "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           repository: none298-dotcom/copy-shelter
@@ -63,16 +51,7 @@ jobs:
   fedora:
     runs-on: ubuntu-24.04
     container: fedora:41
-    # See the ubuntu job's comment: the same tmpfs-`/tmp`-has-no-xattr-support
-    # gap applies inside this container too.
-    env:
-      TMPDIR: ${{ github.workspace }}/.tmp-tests
     steps:
-      # First, before anything (dnf uses TMPDIR for librepo's own scratch
-      # files) reads a $TMPDIR that does not exist yet: dnf's mkstemp
-      # failed outright the first time this ran, before checkout had even
-      # created the workspace's contents.
-      - run: mkdir -p "$TMPDIR"
       - name: Swift toolchain and build prerequisites
         run: |
           set -eux
