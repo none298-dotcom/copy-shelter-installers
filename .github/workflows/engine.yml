@@ -1,0 +1,80 @@
+name: Engine on Linux and Windows
+
+# Copy Shelter's source is private, and Actions minutes on a private repo are
+# billed (the account's limit blocks them). Public repos get Linux and Windows
+# machines free, so the machines live here and fetch the private source with a
+# read-only deploy key (secret PRIVATE_REPO_SSH_KEY). Nothing private is ever
+# committed to this repo; logs show build output only.
+#
+#   gh workflow run engine.yml --repo none298-dotcom/copy-shelter-installers \
+#     -f ref=<branch or full sha> [-f swift=6.4.0] [-f tests=<swift test --filter regex>]
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or full 40 character SHA of none298-dotcom/copy-shelter
+        required: true
+        default: build/m2-repository-core
+      swift:
+        description: Swift release (match the Mac's toolchain)
+        default: "6.4.0"
+      tests:
+        description: swift test --filter pattern (empty runs every test the platform builds)
+        default: ""
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ inputs.swift }}
+      - run: swift --version
+      - run: swift build --product csctl
+      - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
+      - run: .build/debug/csctl --help || true
+
+  fedora:
+    runs-on: ubuntu-24.04
+    container: fedora:41
+    steps:
+      - name: Swift toolchain and build prerequisites
+        run: |
+          set -eux
+          dnf -y install git openssh-clients binutils gcc gnupg2 zip unzip libcurl-devel libedit-devel \
+            libicu-devel sqlite-devel libuuid-devel libxml2-devel python3-devel libstdc++-devel libstdc++-static
+          V="${{ inputs.swift }}"
+          curl -fsSL "https://download.swift.org/swift-${V}-release/fedora41/swift-${V}-RELEASE/swift-${V}-RELEASE-fedora41.tar.gz" -o swift.tar.gz
+          tar -xzf swift.tar.gz --directory / --strip-components=1
+          rm swift.tar.gz
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - run: swift --version
+      - run: swift build --product csctl
+      - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
+
+  windows:
+    # Pinned: a moving windows-latest image has already broken a sibling app.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-${{ inputs.swift }}-release
+          swift-build: ${{ inputs.swift }}-RELEASE
+      - run: swift --version
+      - run: swift build --product csctl
+      - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
