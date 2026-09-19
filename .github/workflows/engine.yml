@@ -68,9 +68,6 @@ jobs:
           ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
       - run: swift --version
       - run: swift build --product csctl
-      # Temporary diagnostic for F-891 on Fedora specifically: the identical
-      # fix worked on Ubuntu but not here.
-      - run: find .build -iname "*.bundle" -o -iname "*.resources" -o -iname "RepositoryFormat.md" | sort
       - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
 
   windows:
