@@ -43,6 +43,7 @@ jobs:
           sudo tar -xzf swift.tar.gz --directory / --strip-components=1
           rm swift.tar.gz
       - run: swift --version
+      - run: ls Sources && ls Sources/CopyShelteriOSCore Sources/CopyShelterTransfer && git log --oneline -1
       - run: swift build --product csctl
       - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
       - run: .build/debug/csctl --help || true
