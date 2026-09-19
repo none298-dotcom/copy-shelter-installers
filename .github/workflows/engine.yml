@@ -32,9 +32,16 @@ jobs:
           repository: none298-dotcom/copy-shelter
           ref: ${{ inputs.ref }}
           ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: ${{ inputs.swift }}
+      - name: Swift toolchain
+        run: |
+          set -eux
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 libgcc-13-dev \
+            libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev libncurses-dev libz3-dev pkg-config tzdata unzip zlib1g-dev
+          V="${{ inputs.swift }}"
+          curl -fsSL "https://download.swift.org/swift-${V}-release/ubuntu2404/swift-${V}-RELEASE/swift-${V}-RELEASE-ubuntu24.04.tar.gz" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz --directory / --strip-components=1
+          rm swift.tar.gz
       - run: swift --version
       - run: swift build --product csctl
       - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
