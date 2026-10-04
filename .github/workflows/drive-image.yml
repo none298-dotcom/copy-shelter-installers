@@ -126,9 +126,10 @@ jobs:
           sudo sgdisk -p "$LOOP"
           sudo partprobe "$LOOP" || true
           ls -la ${LOOP}p*
-          sudo fsck.fat -n ${LOOP}p1
+          # Windows adds its own reserved partition first, so EFI is 2 and Windows is 4.
+          sudo fsck.fat -n ${LOOP}p2
           sudo mkdir -p /mnt/w
-          sudo mount -t ntfs-3g -o ro ${LOOP}p3 /mnt/w
+          sudo mount -t ntfs-3g -o ro ${LOOP}p4 /mnt/w
           df -h /mnt/w
           (cd /mnt/w && sudo find . -type f ! -path './System Volume Information/*' ! -name '$*' -printf '%P\n' | sort | while read f; do echo "$(sudo sha256sum "$f" | cut -d' ' -f1)  $f"; done) > restored.txt
           tr -d '\r' < img/hashes.txt | sort > expected.txt
