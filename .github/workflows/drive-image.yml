@@ -121,7 +121,7 @@ jobs:
           truncate -s 800M disk.img
           LOOP=$(sudo losetup -fP --show disk.img)
           export COPYSHELTER_RECOVERY_KEY=$(tr -d '\r\n' < img/key.txt)
-          .build/debug/csctl restore-drive img/backup --to "$LOOP" --preview
+          sudo -E .build/debug/csctl restore-drive img/backup --to "$LOOP" --preview
           sudo -E .build/debug/csctl restore-drive img/backup --to "$LOOP" --yes
           sudo sgdisk -p "$LOOP"
           sudo partprobe "$LOOP" || true
