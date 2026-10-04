@@ -138,7 +138,8 @@ jobs:
           sudo mount -t ntfs-3g -o ro ${LOOP}p4 /mnt/w
           df -h /mnt/w
           (cd /mnt/w && sudo find . -type f ! -path './System Volume Information/*' ! -name '$*' -printf '%P\n' | sort | while read f; do echo "$(sudo sha256sum "$f" | cut -d' ' -f1)  $f"; done) > restored.txt
-          tr -d '\r' < img/hashes.txt | sort > expected.txt
+          tr -d '\r' < img/hashes.txt | LC_ALL=C sort > expected.txt
+          LC_ALL=C sort -o restored.txt restored.txt
           cat restored.txt
           diff expected.txt restored.txt
           echo "Every file came back the same."
