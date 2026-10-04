@@ -36,7 +36,10 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          # 17 for the app's toolchain, 21 to run Gradle (a Wear plugin needs it); the last is JAVA_HOME.
+          java-version: |
+            17
+            21
       - name: Engine
         shell: pwsh
         run: |
@@ -53,7 +56,7 @@ jobs:
         working-directory: Apps/CopyShelterKotlin
         shell: pwsh
         run: |
-          ./gradlew --no-daemon :desktop:createDistributable :desktop:packageMsi :desktop:packageExe "-PcsctlWindows=$env:RUNNER_TEMP\engine\csctl.exe"
+          ./gradlew --no-daemon "-Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64" :desktop:createDistributable :desktop:packageMsi :desktop:packageExe "-PcsctlWindows=$env:RUNNER_TEMP\engine\csctl.exe"
           Get-ChildItem -Recurse desktop\build\compose\binaries -Include *.msi,*.exe | Format-Table FullName, Length
       - name: Run and look
         shell: pwsh
