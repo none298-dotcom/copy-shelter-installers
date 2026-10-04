@@ -74,7 +74,7 @@ jobs:
             $bmp.Save("$shots\$name.png")
             $g.Dispose(); $bmp.Dispose()
           }
-          # Narrator reads a Java app through the Java Access Bridge.
+          # NVDA reads a Java app through the Java Access Bridge.
           & "$env:JAVA_HOME\bin\jabswitch.exe" -enable
           $app = Get-ChildItem -Recurse "Apps\CopyShelterKotlin\desktop\build\compose\binaries\main\app" -Filter "Copy Shelter.exe" | Select-Object -First 1
           Get-ChildItem (Join-Path $app.DirectoryName "app\resources") -ErrorAction SilentlyContinue | Format-Table Name
@@ -100,6 +100,19 @@ jobs:
           $shell = New-Object -ComObject WScript.Shell
           function Keys($k, $name) { [void]$shell.AppActivate($p.Id); Start-Sleep 1; $shell.SendKeys($k); Start-Sleep 4; Shot $name }
           ${{ inputs.drive }}
+          # NVDA, with its speech written to a log: what a blind person would hear.
+          Invoke-WebRequest https://download.nvaccess.org/releases/2024.4.2/nvda_2024.4.2.exe -OutFile "$env:RUNNER_TEMP\nvda.exe"
+          Start-Process "$env:RUNNER_TEMP\nvda.exe" -ArgumentList "--install-silent" -Wait
+          $nvda = Get-ChildItem "${env:ProgramFiles(x86)}\NVDA", "$env:ProgramFiles\NVDA" -Filter nvda.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          "NVDA at $($nvda.FullName)"
+          Start-Process $nvda.FullName -ArgumentList "--debug-logging", "-f", "`"$shots\nvda.log`""
+          Start-Sleep 15
+          [void]$shell.AppActivate($p.Id); Start-Sleep 3
+          foreach ($i in 1..12) { $shell.SendKeys("{TAB}"); Start-Sleep 2 }
+          Shot "90-nvda"
+          Start-Process $nvda.FullName -ArgumentList "-q" -Wait
+          "---- NVDA said ----"
+          Select-String -Path "$shots\nvda.log" -Pattern "Speaking" | ForEach-Object { $_.Line } | Select-Object -Last 80
           Start-Sleep 2
           Shot "99-end"
           Get-Process | Where-Object { $_.ProcessName -match 'csctl|Copy Shelter' } | Format-Table ProcessName, Id, MainWindowTitle
