@@ -82,35 +82,42 @@ jobs:
       - name: Desktop pieces
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb openbox xdotool imagemagick dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk gnome-keyring
+          sudo apt-get install -y -qq xvfb openbox xdotool imagemagick dbus-user-session xdg-desktop-portal xdg-desktop-portal-gtk gnome-keyring
       - name: Install the Snap
         run: |
           sudo snap install --dangerous snap/*.snap
-          snap list copy-shelter || snap list
-          snap connections copy-shelter || true
+          # The two connections a store install asks the person for.
+          sudo snap connect copy-shelter:password-manager-service || true
+          sudo snap connect copy-shelter:removable-media || true
+          snap connections copy-shelter
       - name: Run and look
         run: |
           mkdir -p shots
+          # A snap runs only inside a user session of its own: a systemd user manager and its bus.
+          sudo loginctl enable-linger "$USER"
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          for i in $(seq 30); do [ -S "$XDG_RUNTIME_DIR/bus" ] && break; sleep 1; done
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
           export DISPLAY=:99
           Xvfb :99 -screen 0 1440x900x24 &
           sleep 2
-          eval "$(dbus-launch --sh-syntax)"
-          export XDG_CURRENT_DESKTOP=GNOME
           openbox &
-          /usr/libexec/xdg-desktop-portal-gtk -r &
-          /usr/libexec/xdg-desktop-portal -r &
-          sleep 2
-          (snap run copy-shelter > shots/app.log 2>&1 &)
-          sleep 40
+          systemctl --user import-environment DISPLAY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS
+          echo -n "" | gnome-keyring-daemon --unlock --components=secrets || true
+          systemd-run --user --unit=portal-gtk --setenv=DISPLAY=:99 /usr/libexec/xdg-desktop-portal-gtk -r || true
+          systemd-run --user --unit=portal --setenv=DISPLAY=:99 --setenv=XDG_CURRENT_DESKTOP=GNOME /usr/libexec/xdg-desktop-portal -r || true
+          sleep 3
+          systemd-run --user --unit=copyshelter --setenv=DISPLAY=:99 --setenv=XDG_CURRENT_DESKTOP=GNOME /snap/bin/copy-shelter
+          sleep 45
           import -window root shots/01-start.png
-          W=$(xdotool search --onlyvisible --name "Copy Shelter" | head -1); echo "window $W"
           xdotool search --onlyvisible --name "." getwindowname %@ || true
           ${{ inputs.drive }}
           sleep 3
           import -window root shots/99-end.png
           ps aux | grep -E "csctl|copy-shelter|java" | grep -v grep || true
-          cat ~/snap/copy-shelter/current/.copyshelter/desktop.log 2>/dev/null | tail -60 || true
-          tail -60 shots/app.log
+          journalctl --user -u copyshelter --no-pager | tail -60 > shots/app.log || true
+          cat ~/snap/copy-shelter/current/.copyshelter/desktop.log 2>/dev/null | tail -60 >> shots/app.log || true
+          tail -80 shots/app.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
