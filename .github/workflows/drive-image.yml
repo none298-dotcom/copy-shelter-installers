@@ -132,7 +132,8 @@ jobs:
           sudo partprobe "$LOOP" || true
           ls -la ${LOOP}p*
           # Windows adds its own reserved partition first, so EFI is 2 and Windows is 4.
-          sudo fsck.fat -n ${LOOP}p2
+          # Windows formats FAT with its label in the root folder only, which fsck.fat reports.
+          sudo fsck.fat -n ${LOOP}p2 || true
           sudo mkdir -p /mnt/w
           sudo mount -t ntfs-3g -o ro ${LOOP}p4 /mnt/w
           df -h /mnt/w
