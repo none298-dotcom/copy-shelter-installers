@@ -1,0 +1,68 @@
+name: Linux packages and Snap
+
+# Builds the static engine, the Linux app archive (build-linux-packages.sh) and the Snap from
+# the private source, fetched with the read-only deploy key. Nothing is published: the Snap is
+# kept as a one-day artifact for checking on a test machine.
+#
+#   gh workflow run snap.yml --repo none298-dotcom/copy-shelter-installers -f ref=<branch or full sha>
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or full 40 character SHA of none298-dotcom/copy-shelter
+        required: true
+        default: build/m2-repository-core
+      swift:
+        description: Swift release (match the Mac's toolchain)
+        default: "6.4.0"
+
+jobs:
+  snap:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - name: Swift toolchain and the static Linux SDK
+        run: |
+          set -eux
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 libgcc-13-dev \
+            libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev libncurses-dev libz3-dev pkg-config tzdata unzip zlib1g-dev
+          V="${{ inputs.swift }}"
+          curl -fsSL "https://download.swift.org/swift-${V}-release/ubuntu2404/swift-${V}-RELEASE/swift-${V}-RELEASE-ubuntu24.04.tar.gz" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz --directory / --strip-components=1
+          rm swift.tar.gz
+          curl -fsSL "https://download.swift.org/swift-${V}-release/static-sdk/swift-${V}-RELEASE/swift-${V}-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz" -o sdk.tar.gz
+          swift sdk install "$PWD/sdk.tar.gz"
+          rm sdk.tar.gz
+      - name: Static engine
+        run: |
+          swift build -c release --swift-sdk x86_64-swift-linux-musl --product csctl --scratch-path "$RUNNER_TEMP/out"
+          strip -o "$RUNNER_TEMP/csctl" "$RUNNER_TEMP/out/release/csctl"
+          file "$RUNNER_TEMP/csctl"
+      - name: AppImage tools
+        run: |
+          curl -fsSL https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -o "$RUNNER_TEMP/appimagetool"
+          curl -fsSL https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 -o "$RUNNER_TEMP/runtime"
+          chmod 755 "$RUNNER_TEMP/appimagetool" "$RUNNER_TEMP/runtime"
+      - name: Linux packages
+        env:
+          GRADLE_OFFLINE: ""
+        run: |
+          bash Apps/CopyShelterKotlin/desktop/packaging/linux/build-linux-packages.sh \
+            "$RUNNER_TEMP/csctl" 0.1.0 "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/appimagetool"
+          cp Apps/CopyShelterKotlin/desktop/packaging/linux/dist/copy-shelter-0.1.0-linux-x86_64.tar.xz \
+            Apps/CopyShelterKotlin/desktop/packaging/linux/
+      - uses: snapcore/action-build@v1
+        id: snap
+        with:
+          path: Apps/CopyShelterKotlin/desktop/packaging/linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: copy-shelter-snap
+          path: ${{ steps.snap.outputs.snap }}
+          retention-days: 1
