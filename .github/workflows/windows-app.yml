@@ -76,6 +76,19 @@ jobs:
           & "$env:JAVA_HOME\bin\jabswitch.exe" -enable
           $app = Get-ChildItem -Recurse "Apps\CopyShelterKotlin\desktop\build\compose\binaries\main\app" -Filter "Copy Shelter.exe" | Select-Object -First 1
           Get-ChildItem (Join-Path $app.DirectoryName "app\resources") -ErrorAction SilentlyContinue | Format-Table Name
+          # The launcher hides why the JVM would not start; the same runtime and classes, run
+          # directly, say it.
+          $dir = $app.DirectoryName
+          Get-Content (Join-Path $dir "app\Copy Shelter.cfg")
+          $opts = (Get-Content (Join-Path $dir "app\Copy Shelter.cfg") | Where-Object { $_ -like "java-options=*" }) -replace "^java-options=", "" -replace '\$APPDIR', (Join-Path $dir "app")
+          $main = ((Get-Content (Join-Path $dir "app\Copy Shelter.cfg") | Where-Object { $_ -like "app.mainclass=*" }) -replace "^app.mainclass=", "")
+          $probe = Start-Process (Join-Path $dir "runtime\bin\java.exe") -ArgumentList (@($opts) + @("-cp", "`"$(Join-Path $dir 'app\*')`"", $main)) -RedirectStandardError "$shots\java-err.txt" -RedirectStandardOutput "$shots\java-out.txt" -PassThru
+          Start-Sleep 20
+          Get-Content "$shots\java-err.txt" -Tail 60
+          Get-Content "$shots\java-out.txt" -Tail 20
+          Shot "00-direct"
+          Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue
+          & (Join-Path $dir "runtime\bin\java.exe") --list-modules
           $p = Start-Process $app.FullName -PassThru
           Start-Sleep 25
           Shot "01-start"
