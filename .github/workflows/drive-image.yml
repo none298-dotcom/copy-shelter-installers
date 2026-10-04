@@ -1,0 +1,137 @@
+name: Drive image
+
+# A whole Windows drive saved and put back (docs/DRIVE-IMAGE-FORMAT.md): on the Windows runner a
+# small GPT disk (EFI, Microsoft reserved, NTFS) is filled with files and saved with
+# `csctl image-drive`, from a shadow copy; on the Linux runner the rescue USB's
+# `csctl restore-drive` puts it onto a larger disk, and every file is compared. The backup and
+# its throwaway test key travel between the two as a one-day artifact.
+#
+#   gh workflow run drive-image.yml --repo none298-dotcom/copy-shelter-installers -f ref=<branch or full sha>
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or full 40 character SHA of none298-dotcom/copy-shelter
+        required: true
+        default: build/m2-repository-core
+      swift:
+        description: Swift release
+        default: "6.4.0"
+
+jobs:
+  image:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-${{ inputs.swift }}-release
+          swift-build: ${{ inputs.swift }}-RELEASE
+      - run: swift build --product csctl
+      - name: A small Windows-shaped disk
+        shell: pwsh
+        run: |
+          $t = "$env:RUNNER_TEMP\img"
+          New-Item -ItemType Directory -Force $t | Out-Null
+          @"
+          create vdisk file=$t\disk.vhdx maximum=600 type=expandable
+          select vdisk file=$t\disk.vhdx
+          attach vdisk
+          convert gpt
+          create partition efi size=100
+          format quick fs=fat32 label=SYSTEM
+          create partition msr size=16
+          create partition primary
+          format quick fs=ntfs label=Windows
+          assign letter=V
+          "@ | Set-Content "$t\make.txt"
+          diskpart /s "$t\make.txt"
+          $n = (Get-DiskImage -ImagePath "$t\disk.vhdx" | Get-Disk).Number
+          "disk number $n"
+          "DISK=$n" | Out-File -Append $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force V:\Users\Lee\Documents, V:\Windows\System32 | Out-Null
+          "a letter" | Set-Content V:\Users\Lee\Documents\letter.txt
+          $r = New-Object byte[] (40MB); (New-Object Random 7).NextBytes($r); [IO.File]::WriteAllBytes("V:\Users\Lee\Documents\photo.raw", $r)
+          $r = New-Object byte[] (60MB); (New-Object Random 9).NextBytes($r); [IO.File]::WriteAllBytes("V:\Windows\System32\big.bin", $r)
+          # Free space in the middle: written, then deleted.
+          $r = New-Object byte[] (100MB); [IO.File]::WriteAllBytes("V:\gone.bin", $r); Remove-Item V:\gone.bin
+          Get-ChildItem -Recurse -File V:\ | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($_.FullName.Substring(3).Replace('\','/'))"
+          } | Sort-Object | Set-Content "$t\hashes.txt"
+          Get-Content "$t\hashes.txt"
+          Get-Partition -DiskNumber $n | Format-Table PartitionNumber, Type, Offset, Size, GptType
+      - name: Save it as a drive image
+        shell: pwsh
+        run: |
+          $t = "$env:RUNNER_TEMP\img"
+          $out = & .build\debug\csctl.exe init "$t\backup" 2>&1 | Out-String
+          $out
+          $key = [regex]::Match($out, '[0-9A-Z]{5}(-[0-9A-Z]{5}){8}').Value
+          $key | Set-Content "$t\key.txt"
+          $env:COPYSHELTER_RECOVERY_KEY = $key
+          & .build\debug\csctl.exe image-drive $env:DISK "$t\backup"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & .build\debug\csctl.exe snapshots "$t\backup"
+          & .build\debug\csctl.exe browse "$t\backup" partitions
+          Get-CimInstance Win32_ShadowCopy | Format-Table ID, DeviceObject
+      - uses: actions/upload-artifact@v4
+        with:
+          name: drive-image-test
+          path: |
+            ${{ runner.temp }}/img/backup
+            ${{ runner.temp }}/img/key.txt
+            ${{ runner.temp }}/img/hashes.txt
+          retention-days: 1
+
+  restore:
+    needs: image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - name: Swift toolchain and NTFS tools
+        run: |
+          set -eux
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 libgcc-13-dev \
+            libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev libncurses-dev libz3-dev pkg-config tzdata unzip zlib1g-dev \
+            ntfs-3g dosfstools gdisk
+          V="${{ inputs.swift }}"
+          curl -fsSL "https://download.swift.org/swift-${V}-release/ubuntu2404/swift-${V}-RELEASE/swift-${V}-RELEASE-ubuntu24.04.tar.gz" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz --directory / --strip-components=1
+          rm swift.tar.gz
+      - run: swift build --product csctl
+      - uses: actions/download-artifact@v4
+        with:
+          name: drive-image-test
+          path: img
+      - name: Put it back on a larger disk and compare
+        run: |
+          set -eux
+          ls img
+          truncate -s 800M disk.img
+          LOOP=$(sudo losetup -fP --show disk.img)
+          export COPYSHELTER_RECOVERY_KEY=$(tr -d '\r\n' < img/key.txt)
+          .build/debug/csctl restore-drive img/backup --to "$LOOP" --preview
+          sudo -E .build/debug/csctl restore-drive img/backup --to "$LOOP" --yes
+          sudo sgdisk -p "$LOOP"
+          sudo partprobe "$LOOP" || true
+          ls -la ${LOOP}p*
+          sudo fsck.fat -n ${LOOP}p1
+          sudo mkdir -p /mnt/w
+          sudo mount -t ntfs-3g -o ro ${LOOP}p3 /mnt/w
+          df -h /mnt/w
+          (cd /mnt/w && sudo find . -type f ! -path './System Volume Information/*' ! -name '$*' -printf '%P\n' | sort | while read f; do echo "$(sudo sha256sum "$f" | cut -d' ' -f1)  $f"; done) > restored.txt
+          tr -d '\r' < img/hashes.txt | sort > expected.txt
+          cat restored.txt
+          diff expected.txt restored.txt
+          echo "Every file came back the same."
