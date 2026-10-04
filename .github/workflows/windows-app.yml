@@ -43,8 +43,10 @@ jobs:
       - name: Engine
         shell: pwsh
         run: |
+          # Windowless: started by the app, a console program would open a black console window
+          # of its own. Pipes to the app work the same.
           # A resource bundle copy can trip on a file lock the first time; build again.
-          foreach ($i in 1..3) { swift build -c release --product csctl; if ($LASTEXITCODE -eq 0) { break } }
+          foreach ($i in 1..3) { swift build -c release --product csctl -Xlinker /SUBSYSTEM:WINDOWS -Xlinker /ENTRY:mainCRTStartup; if ($LASTEXITCODE -eq 0) { break } }
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $engine = "$env:RUNNER_TEMP\engine"
           New-Item -ItemType Directory -Force $engine | Out-Null
@@ -53,7 +55,6 @@ jobs:
           $core = (Get-Command swiftCore.dll -ErrorAction Stop).Source
           Copy-Item (Join-Path (Split-Path $core) *.dll) $engine
           Get-ChildItem $engine | Format-Table Name, Length
-          & "$engine\csctl.exe" --help | Select-Object -First 5
       - name: App and packages
         working-directory: Apps/CopyShelterKotlin
         shell: pwsh
@@ -103,6 +104,9 @@ jobs:
           # NVDA, with its speech written to a log: what a blind person would hear.
           Invoke-WebRequest https://download.nvaccess.org/releases/2024.4.2/nvda_2024.4.2.exe -OutFile "$env:RUNNER_TEMP\nvda.exe"
           Start-Process "$env:RUNNER_TEMP\nvda.exe" -ArgumentList "--install-silent" -Wait
+          # No welcome or update windows to take the focus from the app.
+          New-Item -ItemType Directory -Force "$env:APPDATA\nvda" | Out-Null
+          "[general]`nshowWelcomeDialogAtStartup = False`n[update]`nautoCheck = False`naskedAllowUsageStats = True`n" | Set-Content "$env:APPDATA\nvda\nvda.ini"
           $nvda = Get-ChildItem "${env:ProgramFiles(x86)}\NVDA", "$env:ProgramFiles\NVDA" -Filter nvda.exe -ErrorAction SilentlyContinue | Select-Object -First 1
           "NVDA at $($nvda.FullName)"
           Start-Process $nvda.FullName -ArgumentList "--debug-logging", "-f", "`"$shots\nvda.log`""
