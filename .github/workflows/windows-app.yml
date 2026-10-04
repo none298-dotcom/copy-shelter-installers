@@ -43,7 +43,9 @@ jobs:
       - name: Engine
         shell: pwsh
         run: |
-          swift build -c release --product csctl
+          # A resource bundle copy can trip on a file lock the first time; build again.
+          foreach ($i in 1..3) { swift build -c release --product csctl; if ($LASTEXITCODE -eq 0) { break } }
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           $engine = "$env:RUNNER_TEMP\engine"
           New-Item -ItemType Directory -Force $engine | Out-Null
           Copy-Item .build\release\csctl.exe $engine
