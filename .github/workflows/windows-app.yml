@@ -1,0 +1,100 @@
+name: Windows app
+
+# Builds csctl.exe (release) and the Windows app with the engine inside, packages the MSI and
+# EXE, then runs the app on the runner's desktop and screenshots it. Nothing is published: the
+# packages and screenshots are one-day artifacts, held for the owner's approval.
+#
+#   gh workflow run windows-app.yml --repo none298-dotcom/copy-shelter-installers -f ref=<branch or full sha>
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or full 40 character SHA of none298-dotcom/copy-shelter
+        required: true
+        default: build/m2-repository-core
+      swift:
+        description: Swift release (match the Mac's toolchain)
+        default: "6.4.0"
+      drive:
+        description: PowerShell run against the app after it starts (screens to visit)
+        default: ""
+
+jobs:
+  app:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-${{ inputs.swift }}-release
+          swift-build: ${{ inputs.swift }}-RELEASE
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Engine
+        shell: pwsh
+        run: |
+          swift build -c release --product csctl
+          $engine = "$env:RUNNER_TEMP\engine"
+          New-Item -ItemType Directory -Force $engine | Out-Null
+          Copy-Item .build\release\csctl.exe $engine
+          Get-ChildItem .build\release -Directory -Filter *.resources | Copy-Item -Destination $engine -Recurse
+          $core = (Get-Command swiftCore.dll -ErrorAction Stop).Source
+          Copy-Item (Join-Path (Split-Path $core) *.dll) $engine
+          Get-ChildItem $engine | Format-Table Name, Length
+          & "$engine\csctl.exe" --help | Select-Object -First 5
+      - name: App and packages
+        working-directory: Apps/CopyShelterKotlin
+        shell: pwsh
+        run: |
+          ./gradlew --no-daemon :desktop:createDistributable :desktop:packageMsi :desktop:packageExe "-PcsctlWindows=$env:RUNNER_TEMP\engine\csctl.exe"
+          Get-ChildItem -Recurse desktop\build\compose\binaries -Include *.msi,*.exe | Format-Table FullName, Length
+      - name: Run and look
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $shots = "$env:RUNNER_TEMP\shots"
+          New-Item -ItemType Directory -Force $shots | Out-Null
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("$shots\$name.png")
+            $g.Dispose(); $bmp.Dispose()
+          }
+          # Narrator reads a Java app through the Java Access Bridge.
+          & "$env:JAVA_HOME\bin\jabswitch.exe" -enable
+          $app = Get-ChildItem -Recurse "Apps\CopyShelterKotlin\desktop\build\compose\binaries\main\app" -Filter "Copy Shelter.exe" | Select-Object -First 1
+          Get-ChildItem (Join-Path $app.DirectoryName "app\resources") -ErrorAction SilentlyContinue | Format-Table Name
+          $p = Start-Process $app.FullName -PassThru
+          Start-Sleep 25
+          Shot "01-start"
+          $shell = New-Object -ComObject WScript.Shell
+          function Keys($k, $name) { [void]$shell.AppActivate($p.Id); Start-Sleep 1; $shell.SendKeys($k); Start-Sleep 4; Shot $name }
+          ${{ inputs.drive }}
+          Start-Sleep 2
+          Shot "99-end"
+          Get-Process | Where-Object { $_.ProcessName -match 'csctl|Copy Shelter' } | Format-Table ProcessName, Id, MainWindowTitle
+          Get-ChildItem -Recurse "$env:LOCALAPPDATA\Copy Shelter" -ErrorAction SilentlyContinue | Format-Table FullName, Length
+          Get-ChildItem -Recurse "$env:LOCALAPPDATA\Copy Shelter" -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 60 }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-screens
+          path: ${{ runner.temp }}/shots
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages-held
+          path: |
+            Apps/CopyShelterKotlin/desktop/build/compose/binaries/main/msi/*.msi
+            Apps/CopyShelterKotlin/desktop/build/compose/binaries/main/exe/*.exe
+          retention-days: 1
