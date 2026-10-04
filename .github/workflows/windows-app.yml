@@ -84,6 +84,7 @@ jobs:
           Get-Process | Where-Object { $_.ProcessName -match 'csctl|Copy Shelter' } | Format-Table ProcessName, Id, MainWindowTitle
           Get-ChildItem -Recurse "$env:LOCALAPPDATA\Copy Shelter" -ErrorAction SilentlyContinue | Format-Table FullName, Length
           Get-ChildItem -Recurse "$env:LOCALAPPDATA\Copy Shelter" -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 60 }
+          Get-Content "$env:USERPROFILE\.copyshelter\desktop.log" -Tail 80 -ErrorAction SilentlyContinue
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
       - uses: actions/upload-artifact@v4
         if: always()
