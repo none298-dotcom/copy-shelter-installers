@@ -94,7 +94,9 @@ jobs:
           Get-Content "$shots\java-err.txt" -Tail 80
           Get-Content "$shots\java-out.txt" -Tail 20
           Shot "00-direct"
-          Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue
+          # The whole tree: the engine it started would keep its console window open.
+          taskkill /T /F /PID $probe.Id | Out-Null
+          Start-Sleep 2
           $p = Start-Process $app.FullName -PassThru
           Start-Sleep 25
           Shot "01-start"
