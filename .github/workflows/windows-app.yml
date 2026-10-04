@@ -85,6 +85,7 @@ jobs:
           # Same classes and the same modules as the package's trimmed runtime, on a full Java.
           $mods = ((Get-Content (Join-Path $dir "runtime\release") | Where-Object { $_ -like "MODULES=*" }) -replace '^MODULES="?', '' -replace '"$', '') -split ' ' -join ','
           "modules: $mods"
+          $opts = @($opts | ForEach-Object { if ($_ -match ' ') { '"' + $_ + '"' } else { $_ } })
           $probe = Start-Process "$env:JAVA_HOME_17_X64\bin\java.exe" -ArgumentList (@("--limit-modules", $mods) + @($opts) + @("-cp", "`"$(Join-Path $dir 'app\*')`"", $main)) -RedirectStandardError "$shots\java-err.txt" -RedirectStandardOutput "$shots\java-out.txt" -PassThru
           Start-Sleep 25
           Get-Content "$shots\java-err.txt" -Tail 80
