@@ -127,7 +127,8 @@ jobs:
           Get-Content "$env:USERPROFILE\.copyshelter\desktop.log" -Tail 80 -ErrorAction SilentlyContinue
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
       - name: Store package, installed and started
-        shell: pwsh
+        # Windows PowerShell: the Appx module does not load in PowerShell 7 on the runner.
+        shell: powershell
         run: |
           # Test identity only: Partner Center assigns the real Name and Publisher. Nothing is uploaded.
           $root = "Apps\CopyShelterKotlin\desktop"
