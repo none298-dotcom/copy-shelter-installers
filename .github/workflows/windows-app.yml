@@ -23,6 +23,13 @@ on:
 jobs:
   app:
     runs-on: windows-2022
+    permissions:
+      contents: read
+      id-token: write   # Azure federated login for Trusted Signing; no stored password
+    # `secrets` cannot be read in a step's `if:`, so the job carries the ids.
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,24 +68,33 @@ jobs:
         run: |
           ./gradlew --no-daemon "-Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64" :desktop:createDistributable :desktop:packageMsi :desktop:packageExe "-PcsctlWindows=$env:RUNNER_TEMP\engine\csctl.exe"
           Get-ChildItem -Recurse desktop\build\compose\binaries -Include *.msi,*.exe | Format-Table FullName, Length
-      - name: Sign the installers
-        # Authenticode as Little Bird Trading LLC, the same identity as the owner's other Windows
-        # apps. Runs only once the certificate is stored as repository secrets; until then the
-        # MSI and EXE stay unsigned, as they are for those apps today.
-        env:
-          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        shell: pwsh
-        run: |
-          if (-not $env:WINDOWS_CERT_PFX) { "No certificate stored yet; installers stay unsigned."; exit 0 }
-          $pfx = "$env:RUNNER_TEMP\cert.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
-          $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Where-Object FullName -match 'x64' | Sort-Object FullName | Select-Object -Last 1
-          Get-ChildItem -Recurse Apps\CopyShelterKotlin\desktop\build\compose\binaries\main -Include *.msi,*.exe | ForEach-Object {
-            & $kit.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $_.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Signing $($_.Name) failed" }
-          }
-          Remove-Item $pfx
+      # Authenticode with Azure Trusted Signing, the same account and certificate profile as the
+      # owner's other Windows apps (MyLinedChart: mlcsigning / mlc-public-trust). The login is a
+      # GitHub OIDC federated credential on the mlc-github-signing app, scoped to this repo's main
+      # branch, so the repo holds no password. Until that credential and the three AZURE_* ids
+      # exist here, both steps skip and the installers stay unsigned.
+      - name: Azure login (federated)
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign the installers (Azure Trusted Signing)
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        uses: azure/trusted-signing-action@1d365fec12862c4aa68fcac418143d73f0cea293 # v0
+        with:
+          azure-tenant-id: ${{ env.AZURE_TENANT_ID }}
+          azure-client-id: ${{ env.AZURE_CLIENT_ID }}
+          endpoint: https://eus.codesigning.azure.net/
+          trusted-signing-account-name: mlcsigning
+          certificate-profile-name: mlc-public-trust
+          files-folder: ${{ github.workspace }}\Apps\CopyShelterKotlin\desktop\build\compose\binaries\main
+          files-folder-filter: msi,exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
       - name: Run and look
         shell: pwsh
         run: |
