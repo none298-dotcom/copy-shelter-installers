@@ -61,6 +61,24 @@ jobs:
         run: |
           ./gradlew --no-daemon "-Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64" :desktop:createDistributable :desktop:packageMsi :desktop:packageExe "-PcsctlWindows=$env:RUNNER_TEMP\engine\csctl.exe"
           Get-ChildItem -Recurse desktop\build\compose\binaries -Include *.msi,*.exe | Format-Table FullName, Length
+      - name: Sign the installers
+        # Authenticode as Little Bird Trading LLC, the same identity as the owner's other Windows
+        # apps. Runs only once the certificate is stored as repository secrets; until then the
+        # MSI and EXE stay unsigned, as they are for those apps today.
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        shell: pwsh
+        run: |
+          if (-not $env:WINDOWS_CERT_PFX) { "No certificate stored yet; installers stay unsigned."; exit 0 }
+          $pfx = "$env:RUNNER_TEMP\cert.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
+          $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Where-Object FullName -match 'x64' | Sort-Object FullName | Select-Object -Last 1
+          Get-ChildItem -Recurse Apps\CopyShelterKotlin\desktop\build\compose\binaries\main -Include *.msi,*.exe | ForEach-Object {
+            & $kit.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing $($_.Name) failed" }
+          }
+          Remove-Item $pfx
       - name: Run and look
         shell: pwsh
         run: |
