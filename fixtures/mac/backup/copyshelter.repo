@@ -1,0 +1,19 @@
+{
+  "blobID" : "HMAC-SHA256",
+  "chunker" : {
+    "algorithm" : "FastCDC",
+    "avgSize" : 1048576,
+    "maxSize" : 4194304,
+    "minSize" : 524288,
+    "normalization" : 2
+  },
+  "cipher" : "ChaCha20-Poly1305",
+  "createdAt" : "2026-10-05T01:58:52.302Z",
+  "createdBy" : "CopyShelter\/0.0.0-unbundled (27.0.1)",
+  "formatVersion" : 2,
+  "hash" : "SHA-256",
+  "magic" : "copyshelter-repository",
+  "packTargetSize" : 67108864,
+  "repositoryID" : "f\/0q2Jrrvm+2FxM0mSTDcOVAxhxYQE6\/t9XkW+A30F8=",
+  "signature" : "Ed25519"
+}

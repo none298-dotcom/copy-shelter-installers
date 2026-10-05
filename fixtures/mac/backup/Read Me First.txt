@@ -1,0 +1,83 @@
+COPY SHELTER BACKUP
+===================
+
+This drive holds a backup of somebody's files. Everything in it is
+encrypted. Reading it needs the passphrase chosen when the backup was
+made, or the recovery key written down at the same time.
+
+Neither of those is on this drive, and neither is held by anybody
+else. Without one of them nothing here can be opened, by anyone.
+
+GETTING THE FILES BACK
+----------------------
+
+1. Install macOS
+   A new Mac already has it. A wiped one gets it from Recovery: hold
+   the power button while it starts, then choose Reinstall macOS. This
+   part has to come from Apple, because the system volume is sealed
+   and signed and no other software is allowed to write one.
+
+2. Skip the migration step
+   When macOS offers to transfer from a Mac, Time Machine backup or
+   startup disk, choose to set up as new. Copy Shelter is not one of
+   those things and cannot pretend to be. Your files come back in a
+   moment.
+
+3. Open Copy Shelter and point it at your backup
+   Download it again from copyshelter.com. Connect the drive, or if
+   your backup is in a bucket or on a server, choose "It's in a Bucket
+   or on a Server" and give the same details and keys. Your backup
+   does not need this Mac to have seen it before.
+
+4. Type your passphrase
+   The one chosen when the backup was made. If you cannot remember it,
+   the recovery key written down at the same time opens the same
+   backup. Nobody, including us, can recover either for you.
+
+5. Put everything back
+   Choose Get Files Back, choose everything, and point it at your home
+   folder. Documents, photos, mail, application settings and the
+   applications you installed yourself all return.
+
+WHAT COMES BACK
+---------------
+
+- Your files, exactly as they were, including things you deleted if
+  history covers them
+- Applications you installed yourself, and their settings
+- Preferences, licenses and configuration held in your home folder
+
+WHAT DOES NOT
+-------------
+
+- macOS itself, which comes from Apple
+- Applications from the App Store, which reinstall from your Apple
+  account
+- Permissions you granted apps, such as camera or screen recording
+  access, which macOS deliberately does not let anything restore
+- Passwords in the login keychain, unless you backed that up and know
+  its password
+
+IF COPY SHELTER IS GONE
+-----------------------
+
+The format this drive uses is published, and a backup can be read from
+that document alone by somebody who has never seen the program. Two
+free tools also read it, need no license, and make no network request:
+
+  Copy Shelter Restore   one window, puts files back
+  csctl                  one file, no installation
+
+  https://copyshelter.com/download
+  https://copyshelter.com/format
+
+If those addresses have stopped answering, the format document is
+already on this drive, in the file named below. It is written so that
+somebody who has never seen the program can read the backup from it
+alone.
+
+  Repository Format.md
+
+----------------------------------------------------------------------
+Written by Copy Shelter 0.0.0-unbundled on 5 October 2026.
+This file is rewritten by each backup. Editing it changes nothing else.

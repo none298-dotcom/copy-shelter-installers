@@ -1,0 +1,138 @@
+name: Cross restore
+
+# A backup made on one system is restored on every other and compared file by file: Linux to
+# Windows, Windows to Linux, and the Mac's (fixtures/mac, made on the Mac) to both. Throwaway
+# test keys only.
+#
+#   gh workflow run cross.yml --repo none298-dotcom/copy-shelter-installers -f ref=<branch or full sha>
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or full 40 character SHA of none298-dotcom/copy-shelter
+        required: true
+        default: build/m2-repository-core
+      swift:
+        description: Swift release
+        default: "6.4.0"
+
+jobs:
+  make:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-${{ inputs.swift }}-release
+          swift-build: ${{ inputs.swift }}-RELEASE
+      - if: runner.os == 'Linux'
+        run: |
+          V="${{ inputs.swift }}"
+          curl -fsSL "https://download.swift.org/swift-${V}-release/ubuntu2404/swift-${V}-RELEASE/swift-${V}-RELEASE-ubuntu24.04.tar.gz" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz --directory / --strip-components=1
+      - name: Build
+        shell: pwsh
+        run: |
+          foreach ($i in 1..3) { swift build --product csctl; if ($LASTEXITCODE -eq 0) { break } }
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Files and a backup of them
+        shell: pwsh
+        run: |
+          $src = Join-Path $env:RUNNER_TEMP "src"
+          New-Item -ItemType Directory -Force (Join-Path $src "Docs/deep/deeper"), (Join-Path $src "Photos") | Out-Null
+          "a letter`n" | Set-Content -NoNewline (Join-Path $src "Docs/letter.txt")
+          "café, naïve, 日本語`n" | Set-Content -NoNewline (Join-Path $src "Docs/deep/deeper/unicode é.txt")
+          $r = New-Object byte[] (9MB); (New-Object Random 3).NextBytes($r); [IO.File]::WriteAllBytes((Join-Path $src "Photos/big.raw"), $r)
+          [IO.File]::WriteAllBytes((Join-Path $src "Photos/empty.bin"), [byte[]]@())
+          $exe = if ($IsWindows) { ".build\debug\csctl.exe" } else { ".build/debug/csctl" }
+          $out = & $exe init (Join-Path $env:RUNNER_TEMP "backup") 2>&1 | Out-String
+          $key = [regex]::Match($out, '[0-9A-Z]{5}(-[0-9A-Z]{5}){8}').Value
+          $key | Set-Content (Join-Path $env:RUNNER_TEMP "key.txt")
+          $env:COPYSHELTER_RECOVERY_KEY = $key
+          & $exe backup $src (Join-Path $env:RUNNER_TEMP "backup")
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem -Recurse -File $src | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $([IO.Path]::GetRelativePath($src, $_.FullName).Replace('\','/'))"
+          } | Sort-Object | Set-Content (Join-Path $env:RUNNER_TEMP "hashes.txt")
+          Get-Content (Join-Path $env:RUNNER_TEMP "hashes.txt")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cross-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/backup
+            ${{ runner.temp }}/key.txt
+            ${{ runner.temp }}/hashes.txt
+          retention-days: 1
+
+  restore:
+    needs: make
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, from: Windows }
+          - { os: windows-2022, from: Linux }
+          - { os: ubuntu-24.04, from: Mac }
+          - { os: windows-2022, from: Mac }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: none298-dotcom/copy-shelter
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+      - if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-${{ inputs.swift }}-release
+          swift-build: ${{ inputs.swift }}-RELEASE
+      - if: runner.os == 'Linux'
+        run: |
+          V="${{ inputs.swift }}"
+          curl -fsSL "https://download.swift.org/swift-${V}-release/ubuntu2404/swift-${V}-RELEASE/swift-${V}-RELEASE-ubuntu24.04.tar.gz" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz --directory / --strip-components=1
+      - name: Build
+        shell: pwsh
+        run: |
+          foreach ($i in 1..3) { swift build --product csctl; if ($LASTEXITCODE -eq 0) { break } }
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - if: matrix.from != 'Mac'
+        uses: actions/download-artifact@v4
+        with:
+          name: cross-${{ matrix.from }}
+          path: made
+      # The Mac's backup is made on the owner's Mac with a throwaway key and kept in this repo.
+      - if: matrix.from == 'Mac'
+        uses: actions/checkout@v4
+        with:
+          path: inst
+      - if: matrix.from == 'Mac'
+        shell: pwsh
+        run: Copy-Item -Recurse inst/fixtures/mac made
+      - name: Restore and compare
+        shell: pwsh
+        run: |
+          $exe = if ($IsWindows) { ".build\debug\csctl.exe" } else { ".build/debug/csctl" }
+          $env:COPYSHELTER_RECOVERY_KEY = (Get-Content made/key.txt -Raw).Trim()
+          $to = Join-Path $env:RUNNER_TEMP "back"
+          & $exe restore made/backup $to
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem -Recurse $to | Select-Object -First 30 | Format-Table FullName, Length
+          $root = Get-ChildItem -Recurse -File $to -Filter letter.txt | Select-Object -First 1
+          $base = Split-Path (Split-Path $root.FullName)
+          $got = Get-ChildItem -Recurse -File $base | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $([IO.Path]::GetRelativePath($base, $_.FullName).Replace('\','/'))"
+          } | Sort-Object
+          $want = Get-Content made/hashes.txt | Sort-Object
+          $diff = Compare-Object $want $got
+          if ($diff) { $diff | Format-Table; exit 1 }
+          "Every file made on ${{ matrix.from }} came back the same on ${{ runner.os }}."
