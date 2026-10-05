@@ -126,6 +126,40 @@ jobs:
           Get-ChildItem -Recurse "$env:LOCALAPPDATA\Copy Shelter" -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 60 }
           Get-Content "$env:USERPROFILE\.copyshelter\desktop.log" -Tail 80 -ErrorAction SilentlyContinue
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+      - name: Store package, installed and started
+        shell: pwsh
+        run: |
+          # Test identity only: Partner Center assigns the real Name and Publisher. Nothing is uploaded.
+          $root = "Apps\CopyShelterKotlin\desktop"
+          $app = Get-ChildItem -Recurse "$root\build\compose\binaries\main\app" -Directory -Filter "Copy Shelter" | Select-Object -First 1
+          $stage = "$env:RUNNER_TEMP\msix"
+          Copy-Item -Recurse $app.FullName $stage
+          Copy-Item -Recurse "$root\packaging\windows-store\Assets" "$stage\Assets"
+          $subject = "CN=Copy Shelter Test"
+          (Get-Content -Raw "$root\packaging\windows-store\AppxManifest.xml").Replace('STORE_NAME','CopyShelter.Test').Replace('STORE_PUBLISHER',$subject).Replace('VERSION','0.1.0.0') | Set-Content -NoNewline "$stage\AppxManifest.xml"
+          $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter makeappx.exe | Where-Object FullName -match 'x64' | Sort-Object FullName | Select-Object -Last 1
+          $sign = Join-Path $kit.DirectoryName signtool.exe
+          & $kit.FullName pack /o /d $stage /p "$env:RUNNER_TEMP\CopyShelter.msix"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $subject -CertStoreLocation Cert:\CurrentUser\My -TextExtension @("2.5.29.19={text}")
+          Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\test.cer" | Out-Null
+          Import-Certificate -FilePath "$env:RUNNER_TEMP\test.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          & $sign sign /fd SHA256 /sha1 $cert.Thumbprint "$env:RUNNER_TEMP\CopyShelter.msix"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Add-AppxPackage "$env:RUNNER_TEMP\CopyShelter.msix"
+          $pkg = Get-AppxPackage CopyShelter.Test
+          $pkg | Format-List Name, Version, InstallLocation, PackageFamilyName
+          Get-ChildItem "$($pkg.InstallLocation)\app\resources" -ErrorAction SilentlyContinue | Format-Table Name, Length
+          Start-Process "shell:AppsFolder\$($pkg.PackageFamilyName)!CopyShelter"
+          Start-Sleep 40
+          Get-Process | Where-Object { $_.Path -like "*WindowsApps*" } | Format-Table Name, Id, Path
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\shots" | Out-Null
+          $bmp.Save("$env:RUNNER_TEMP\shots\store-package.png")
+          Get-Content "$env:USERPROFILE\.copyshelter\desktop.log" -Tail 40 -ErrorAction SilentlyContinue
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -138,4 +172,5 @@ jobs:
           path: |
             Apps/CopyShelterKotlin/desktop/build/compose/binaries/main/msi/*.msi
             Apps/CopyShelterKotlin/desktop/build/compose/binaries/main/exe/*.exe
+            ${{ runner.temp }}/CopyShelter.msix
           retention-days: 1
