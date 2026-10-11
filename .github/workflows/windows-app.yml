@@ -85,7 +85,9 @@ jobs:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Sign the installers (Azure Trusted Signing)
+      # Only the two installer folders: the app\ folder is an intermediate image (already
+      # packaged, partly read-only), and signing it fails with "Access is denied".
+      - name: Sign the EXE installer (Azure Trusted Signing)
         if: ${{ env.AZURE_CLIENT_ID != '' }}
         uses: azure/trusted-signing-action@1d365fec12862c4aa68fcac418143d73f0cea293 # v0
         with:
@@ -94,9 +96,22 @@ jobs:
           endpoint: https://eus.codesigning.azure.net/
           trusted-signing-account-name: mlcsigning
           certificate-profile-name: mlc-public-trust
-          files-folder: ${{ github.workspace }}\Apps\CopyShelterKotlin\desktop\build\compose\binaries\main
-          files-folder-filter: msi,exe
-          files-folder-recurse: true
+          files-folder: ${{ github.workspace }}\Apps\CopyShelterKotlin\desktop\build\compose\binaries\main\exe
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Sign the MSI installer (Azure Trusted Signing)
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        uses: azure/trusted-signing-action@1d365fec12862c4aa68fcac418143d73f0cea293 # v0
+        with:
+          azure-tenant-id: ${{ env.AZURE_TENANT_ID }}
+          azure-client-id: ${{ env.AZURE_CLIENT_ID }}
+          endpoint: https://eus.codesigning.azure.net/
+          trusted-signing-account-name: mlcsigning
+          certificate-profile-name: mlc-public-trust
+          files-folder: ${{ github.workspace }}\Apps\CopyShelterKotlin\desktop\build\compose\binaries\main\msi
+          files-folder-filter: msi
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
