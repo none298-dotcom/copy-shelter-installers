@@ -16,6 +16,9 @@ on:
       swift:
         description: Swift release (match the Mac's toolchain)
         default: "6.4.0"
+      version:
+        description: App version for the packages
+        default: "1.1.0"
       drive:
         description: Shell run against the running app (screens to visit, with xdotool)
         default: ""
@@ -55,11 +58,22 @@ jobs:
       - name: Linux packages
         env:
           GRADLE_OFFLINE: ""
+          GOOGLE_DESKTOP_SECRET: ${{ secrets.GOOGLE_DESKTOP_SECRET }}
         run: |
+          V="${{ inputs.version }}"
+          sed -i "s/^version: .*/version: '$V'/" Apps/CopyShelterKotlin/desktop/packaging/linux/snap/snapcraft.yaml
           bash Apps/CopyShelterKotlin/desktop/packaging/linux/build-linux-packages.sh \
-            "$RUNNER_TEMP/csctl" 0.1.0 "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/appimagetool"
-          cp Apps/CopyShelterKotlin/desktop/packaging/linux/dist/copy-shelter-0.1.0-linux-x86_64.tar.xz \
+            "$RUNNER_TEMP/csctl" "$V" "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/appimagetool"
+          cp Apps/CopyShelterKotlin/desktop/packaging/linux/dist/copy-shelter-$V-linux-x86_64.tar.xz \
             Apps/CopyShelterKotlin/desktop/packaging/linux/
+          ls -la Apps/CopyShelterKotlin/desktop/packaging/linux/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: copy-shelter-linux-packages
+          path: |
+            Apps/CopyShelterKotlin/desktop/packaging/linux/dist/*.AppImage
+            Apps/CopyShelterKotlin/desktop/packaging/linux/dist/*.deb
+          retention-days: 3
       - uses: snapcore/action-build@v1
         id: snap
         with:
@@ -68,7 +82,7 @@ jobs:
         with:
           name: copy-shelter-snap
           path: ${{ steps.snap.outputs.snap }}
-          retention-days: 1
+          retention-days: 3
   run-snap:
     # The Snap installed and run in its sandbox on a virtual screen, with the desktop's portal
     # for the folder chooser (F-1141), and screenshots kept.
@@ -123,4 +137,4 @@ jobs:
         with:
           name: snap-screens
           path: shots
-          retention-days: 1
+          retention-days: 3
