@@ -47,6 +47,9 @@ jobs:
       - run: swift build --product csctl
       - run: swift test ${{ inputs.tests != '' && format('--filter "{0}"', inputs.tests) || '' }}
       - run: .build/debug/csctl --help || true
+      - name: Sync between two engines on this machine
+        if: hashFiles('scripts/check-sync-two-engines.sh') != ''
+        run: ./scripts/check-sync-two-engines.sh
 
   fedora:
     runs-on: ubuntu-24.04
