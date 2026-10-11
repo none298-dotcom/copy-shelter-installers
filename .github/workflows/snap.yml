@@ -61,7 +61,7 @@ jobs:
           GOOGLE_DESKTOP_SECRET: ${{ secrets.GOOGLE_DESKTOP_SECRET }}
         run: |
           V="${{ inputs.version }}"
-          sed -i "s/^version: .*/version: '$V'/" Apps/CopyShelterKotlin/desktop/packaging/linux/snap/snapcraft.yaml
+          sed -i -e "s/^version: .*/version: '$V'/" -e "s/copy-shelter-[0-9.]*-linux-x86_64/copy-shelter-$V-linux-x86_64/g" Apps/CopyShelterKotlin/desktop/packaging/linux/snap/snapcraft.yaml
           bash Apps/CopyShelterKotlin/desktop/packaging/linux/build-linux-packages.sh \
             "$RUNNER_TEMP/csctl" "$V" "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/appimagetool"
           cp Apps/CopyShelterKotlin/desktop/packaging/linux/dist/copy-shelter-$V-linux-x86_64.tar.xz \
