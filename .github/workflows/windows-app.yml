@@ -16,6 +16,9 @@ on:
       swift:
         description: Swift release (match the Mac's toolchain)
         default: "6.4.0"
+      version:
+        description: App version for the installers
+        default: "1.1.0"
       drive:
         description: PowerShell run against the app after it starts (screens to visit)
         default: ""
@@ -65,8 +68,10 @@ jobs:
       - name: App and packages
         working-directory: Apps/CopyShelterKotlin
         shell: pwsh
+        env:
+          GOOGLE_DESKTOP_SECRET: ${{ secrets.GOOGLE_DESKTOP_SECRET }}
         run: |
-          ./gradlew --no-daemon "-Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64" :desktop:createDistributable :desktop:packageMsi :desktop:packageExe "-PcsctlWindows=$env:RUNNER_TEMP\engine\csctl.exe"
+          ./gradlew --no-daemon "-Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64" :desktop:createDistributable :desktop:packageMsi :desktop:packageExe "-PcsctlWindows=$env:RUNNER_TEMP\engine\csctl.exe" "-PappVersion=${{ inputs.version }}"
           Get-ChildItem -Recurse desktop\build\compose\binaries -Include *.msi,*.exe | Format-Table FullName, Length
       # Authenticode with Azure Trusted Signing, the same account and certificate profile as the
       # owner's other Windows apps (MyLinedChart: mlcsigning / mlc-public-trust). The login is a
@@ -200,7 +205,7 @@ jobs:
         with:
           name: windows-screens
           path: ${{ runner.temp }}/shots
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
           name: windows-packages-held
@@ -208,4 +213,4 @@ jobs:
             Apps/CopyShelterKotlin/desktop/build/compose/binaries/main/msi/*.msi
             Apps/CopyShelterKotlin/desktop/build/compose/binaries/main/exe/*.exe
             ${{ runner.temp }}/CopyShelter.msix
-          retention-days: 1
+          retention-days: 3
